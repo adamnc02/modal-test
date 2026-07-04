@@ -12,7 +12,7 @@
   :root{
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --app-height: 100vh;
+    --app-height: 100dvh;
 
     --bg-0: #0b0f14;
     --bg-1: #10161d;
@@ -29,14 +29,31 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
   html, body {
+    position: fixed;
+    inset: 0;
     margin: 0;
     padding: 0;
+    width: 100%;
     height: 100%;
     background: var(--bg-0);
     overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     color: var(--text-0);
-    overscroll-behavior: none;
+  }
+
+  /* Hidden probe used to read the true rendered viewport height (more
+     reliable on iOS than window.innerHeight / visualViewport.height,
+     which can misreport by a few px in standalone mode). */
+  #envProbe {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 1px;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
   }
 
   /* ===== App shell — pinned to the bottom of the device viewport ===== */
@@ -67,6 +84,8 @@
     padding: calc(28px + var(--safe-top)) 20px 24px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
     opacity: 0;
     transform: translateX(16px) scale(0.99);
     pointer-events: none;
@@ -336,6 +355,8 @@
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
     margin: 0;
     padding: 6px 16px calc(20px + var(--safe-bottom));
     list-style: none;
@@ -367,6 +388,8 @@
 </style>
 </head>
 <body>
+
+  <div id="envProbe" aria-hidden="true"></div>
 
   <div class="app" id="app">
     <div class="pages">
@@ -442,18 +465,35 @@
 (function () {
   'use strict';
 
-  /* ---------- App height: measured once (on load / orientation change), ----------
-     not on every visualViewport resize — so the app shell never jumps around
-     when the keyboard opens elsewhere (e.g. inside the modal). */
+  /* ---------- App height ----------
+     Measured from a hidden 100dvh probe element rather than
+     window.innerHeight / visualViewport.height, both of which can
+     misreport by a few px in iOS standalone mode (the cause of the
+     "dead space" at the bottom of the app and modal sheets).
+     Measured once on load / orientation change only — never on every
+     visualViewport resize — so the app shell never jumps around when
+     the keyboard opens elsewhere (e.g. inside the modal). */
+  var envProbe = document.getElementById('envProbe');
+
   function measureAppHeight() {
-    var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-    document.documentElement.style.setProperty('--app-height', h + 'px');
+    var h = envProbe.getBoundingClientRect().height;
+    if (h > 0) {
+      document.documentElement.style.setProperty('--app-height', h + 'px');
+    }
   }
+
   measureAppHeight();
+  // Re-measure a couple of times shortly after load: iOS standalone can
+  // settle its chrome/safe-area a moment after the load event fires.
+  window.addEventListener('load', function () {
+    measureAppHeight();
+    requestAnimationFrame(measureAppHeight);
+    setTimeout(measureAppHeight, 250);
+  });
+  window.addEventListener('pageshow', measureAppHeight);
   window.addEventListener('orientationchange', function () {
     setTimeout(measureAppHeight, 300);
   });
-  window.addEventListener('load', measureAppHeight);
 
   /* ---------- Nav bar: sliding highlight ---------- */
   var navbar = document.getElementById('navbar');
