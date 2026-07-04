@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0f14">
+<title>PWA Framework</title>
+<style>
+  :root{
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --app-height: 100vh;
+
+    --bg-0: #0b0f14;
+    --bg-1: #10161d;
+    --bg-2: #171f28;
+    --surface: #1b2430;
+    --surface-2: #222c3a;
+    --border: rgba(255,255,255,0.08);
+    --text-0: #f2f5f7;
+    --text-1: #9aa7b4;
+    --accent: #16c2a3;
+    --accent-dim: rgba(22,194,163,0.16);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg-0);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    color: var(--text-0);
+    overscroll-behavior: none;
+  }
+
+  /* ===== App shell — pinned to the bottom of the device viewport ===== */
+  .app {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--app-height);
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(120% 60% at 50% 0%, rgba(22,194,163,0.10), transparent 60%),
+      linear-gradient(180deg, var(--bg-1), var(--bg-0));
+    overflow: hidden;
+  }
+
+  .pages {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .page {
+    position: absolute;
+    inset: 0;
+    padding: calc(28px + var(--safe-top)) 20px 24px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    opacity: 0;
+    transform: translateX(16px) scale(0.99);
+    pointer-events: none;
+    transition: opacity 0.28s ease, transform 0.32s cubic-bezier(.2,.8,.2,1);
+  }
+
+  .page.active {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    pointer-events: auto;
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+
+  .page h1 {
+    font-size: 26px;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+
+  .page p.lead {
+    color: var(--text-1);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 22px;
+  }
+
+  .hero-card {
+    border-radius: 20px;
+    padding: 22px;
+    background: linear-gradient(155deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .hero-card .tag {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border-radius: 999px;
+    padding: 4px 10px;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  .hero-card h2 {
+    margin: 0 0 6px;
+    font-size: 19px;
+  }
+
+  .hero-card p {
+    margin: 0 0 16px;
+    color: var(--text-1);
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+
+  .btn {
+    appearance: none;
+    border: none;
+    border-radius: 14px;
+    padding: 13px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #04231d;
+    background: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .btn:active { transform: scale(0.96); opacity: 0.9; }
+
+  .btn.secondary {
+    background: var(--surface-2);
+    color: var(--text-0);
+    border: 1px solid var(--border);
+  }
+
+  .filler-row { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+  .filler-card {
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 14px 16px;
+    font-size: 13.5px;
+    color: var(--text-1);
+  }
+  .filler-card b { color: var(--text-0); display:block; margin-bottom:2px; font-size: 14px;}
+
+  /* ===== Floating animated nav bar ===== */
+  .navbar-wrap {
+    flex: 0 0 auto;
+    padding: 10px 16px calc(12px + var(--safe-bottom));
+    display: flex;
+    justify-content: center;
+  }
+
+  .navbar {
+    position: relative;
+    display: flex;
+    width: 100%;
+    max-width: 420px;
+    background: rgba(24, 32, 41, 0.78);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    padding: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset;
+    animation: navIn 0.5s cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  @keyframes navIn {
+    from { opacity: 0; transform: translateY(18px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .nav-highlight {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    height: calc(100% - 12px);
+    width: 0;
+    background: var(--accent-dim);
+    border: 1px solid rgba(22,194,163,0.35);
+    border-radius: 16px;
+    transition: transform 0.35s cubic-bezier(.2,.8,.2,1), width 0.35s cubic-bezier(.2,.8,.2,1);
+    z-index: 0;
+  }
+
+  .nav-btn {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-1);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 11px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.25s ease;
+  }
+
+  .nav-btn.active { color: var(--accent); }
+
+  .nav-btn svg { width: 20px; height: 20px; }
+
+  /* ===== Modal ===== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 8, 12, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 100;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: auto; }
+
+  .modal-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--app-height) * 0.6);
+    max-height: calc(var(--app-height) * 0.6);
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 24px 24px 0 0;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+    transform: translateY(102%);
+    transition: transform 0.38s cubic-bezier(.2,.8,.2,1), height 0.32s ease, max-height 0.32s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .modal-overlay.open .modal-sheet { transform: translateY(0); }
+
+  /* When the search input is focused, expand the sheet up to just under the island */
+  .modal-sheet.expanded {
+    height: calc(var(--app-height) - var(--safe-top) - 10px);
+    max-height: calc(var(--app-height) - var(--safe-top) - 10px);
+  }
+
+  .modal-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 999px;
+    margin: 10px auto 4px;
+    flex: 0 0 auto;
+  }
+
+  .modal-header {
+    flex: 0 0 auto;
+    padding: 10px 16px 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-title {
+    padding: 2px 16px 0;
+    font-size: 15px;
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+
+  .search-wrap {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .search-wrap svg {
+    position: absolute;
+    left: 12px;
+    width: 15px;
+    height: 15px;
+    color: var(--text-1);
+    pointer-events: none;
+  }
+
+  .modal-search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px 10px 34px;
+    font-size: 15px;
+    color: var(--text-0);
+    outline: none;
+  }
+  .modal-search::placeholder { color: var(--text-1); }
+  .modal-search:focus { border-color: var(--accent); }
+
+  .modal-close {
+    flex: 0 0 auto;
+    border: none;
+    background: var(--surface-2);
+    color: var(--text-0);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .modal-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0;
+    padding: 6px 16px calc(20px + var(--safe-bottom));
+    list-style: none;
+  }
+
+  .modal-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 15px;
+  }
+
+  .modal-list li .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: 0 0 auto;
+  }
+
+  .modal-empty {
+    color: var(--text-1);
+    font-size: 13.5px;
+    text-align: center;
+    padding: 30px 10px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="app" id="app">
+    <div class="pages">
+
+      <section class="page active" id="page-home">
+        <p class="eyebrow">Framework demo</p>
+        <h1>Home</h1>
+        <p class="lead">This page and the nav bar stay pinned to the bottom of the screen, even while a modal is open above them.</p>
+
+        <div class="hero-card">
+          <span class="tag">Modal A</span>
+          <h2>Object picker</h2>
+          <p>Opens a sheet using ~60% of the screen height, with a searchable list.</p>
+          <button class="btn" data-open-modal="fruits">Browse items</button>
+        </div>
+
+        <div class="filler-row">
+          <div class="filler-card"><b>Placeholder block</b>Just here to show scrollable page content behind the nav bar.</div>
+          <div class="filler-card"><b>Placeholder block</b>Content itself isn't important for this framework.</div>
+        </div>
+      </section>
+
+      <section class="page" id="page-library">
+        <p class="eyebrow">Framework demo</p>
+        <h1>Library</h1>
+        <p class="lead">A second page, reached via the sliding nav bar highlight below.</p>
+
+        <div class="hero-card">
+          <span class="tag">Modal B</span>
+          <h2>Colour picker</h2>
+          <p>Same modal component, different dataset — tap into the search field to see it expand under the island.</p>
+          <button class="btn" data-open-modal="colors">Browse items</button>
+        </div>
+
+        <div class="filler-row">
+          <div class="filler-card"><b>Placeholder block</b>Swap this content for whatever the real app needs.</div>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="navbar-wrap">
+      <nav class="navbar" id="navbar">
+        <div class="nav-highlight" id="navHighlight"></div>
+        <button class="nav-btn active" data-page="page-home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
+          Home
+        </button>
+        <button class="nav-btn" data-page="page-library">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/></svg>
+          Library
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-sheet" id="modalSheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title" id="modalTitle">Items</div>
+      <div class="modal-header">
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input class="modal-search" id="modalSearch" type="search" placeholder="Search..." autocomplete="off" autocorrect="off" autocapitalize="off">
+        </div>
+        <button class="modal-close" id="modalClose">Close</button>
+      </div>
+      <ul class="modal-list" id="modalList"></ul>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- App height: measured once (on load / orientation change), ----------
+     not on every visualViewport resize — so the app shell never jumps around
+     when the keyboard opens elsewhere (e.g. inside the modal). */
+  function measureAppHeight() {
+    var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    document.documentElement.style.setProperty('--app-height', h + 'px');
+  }
+  measureAppHeight();
+  window.addEventListener('orientationchange', function () {
+    setTimeout(measureAppHeight, 300);
+  });
+  window.addEventListener('load', measureAppHeight);
+
+  /* ---------- Nav bar: sliding highlight ---------- */
+  var navbar = document.getElementById('navbar');
+  var navHighlight = document.getElementById('navHighlight');
+  var navBtns = Array.prototype.slice.call(document.querySelectorAll('.nav-btn'));
+  var pages = Array.prototype.slice.call(document.querySelectorAll('.page'));
+
+  function positionHighlight(btn, animate) {
+    requestAnimationFrame(function () {
+      var navRect = navbar.getBoundingClientRect();
+      var btnRect = btn.getBoundingClientRect();
+      if (!animate) navHighlight.style.transition = 'none';
+      navHighlight.style.width = btnRect.width + 'px';
+      navHighlight.style.transform = 'translateX(' + (btnRect.left - navRect.left - 6) + 'px)';
+      if (!animate) {
+        requestAnimationFrame(function () {
+          navHighlight.style.transition = '';
+        });
+      }
+    });
+  }
+
+  function goToPage(pageId, btn) {
+    pages.forEach(function (p) { p.classList.toggle('active', p.id === pageId); });
+    navBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+    positionHighlight(btn, true);
+  }
+
+  navBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () { goToPage(btn.dataset.page, btn); });
+  });
+
+  // Initial highlight position (no animation on first paint)
+  window.addEventListener('load', function () {
+    positionHighlight(navBtns[0], false);
+  });
+  window.addEventListener('resize', function () {
+    var active = document.querySelector('.nav-btn.active');
+    if (active) positionHighlight(active, false);
+  });
+
+  /* ---------- Modal: data, open/close, search filter, keyboard expand ---------- */
+  var DATA = {
+    fruits: ['Apple', 'Apricot', 'Banana', 'Blackberry', 'Blueberry', 'Cherry', 'Clementine',
+      'Date', 'Dragonfruit', 'Elderberry', 'Fig', 'Grape', 'Grapefruit', 'Guava', 'Kiwi',
+      'Lemon', 'Lime', 'Lychee', 'Mango', 'Melon', 'Nectarine', 'Orange', 'Papaya', 'Passionfruit',
+      'Peach', 'Pear', 'Persimmon', 'Pineapple', 'Plum', 'Pomegranate', 'Raspberry', 'Strawberry',
+      'Tangerine', 'Watermelon'],
+    colors: ['Amber', 'Azure', 'Burgundy', 'Charcoal', 'Coral', 'Crimson', 'Cyan', 'Emerald',
+      'Fuchsia', 'Gold', 'Indigo', 'Ivory', 'Jade', 'Lavender', 'Lilac', 'Magenta', 'Maroon',
+      'Mint', 'Navy', 'Olive', 'Onyx', 'Peach', 'Plum', 'Rose', 'Ruby', 'Sage', 'Sapphire',
+      'Scarlet', 'Slate', 'Tan', 'Teal', 'Turquoise', 'Violet', 'Yellow']
+  };
+  var TITLES = { fruits: 'Items · Fruits', colors: 'Items · Colours' };
+
+  var overlay = document.getElementById('modalOverlay');
+  var sheet = document.getElementById('modalSheet');
+  var listEl = document.getElementById('modalList');
+  var searchEl = document.getElementById('modalSearch');
+  var titleEl = document.getElementById('modalTitle');
+  var closeBtn = document.getElementById('modalClose');
+  var currentDataset = 'fruits';
+
+  function renderList(query) {
+    var q = (query || '').trim().toLowerCase();
+    var items = DATA[currentDataset].filter(function (item) {
+      return item.toLowerCase().indexOf(q) !== -1;
+    });
+
+    listEl.innerHTML = '';
+    if (items.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'modal-empty';
+      empty.textContent = 'No results for “' + query + '”';
+      listEl.appendChild(empty);
+      return;
+    }
+    items.forEach(function (item) {
+      var li = document.createElement('li');
+      var dot = document.createElement('span');
+      dot.className = 'dot';
+      li.appendChild(dot);
+      li.appendChild(document.createTextNode(item));
+      listEl.appendChild(li);
+    });
+  }
+
+  function openModal(datasetKey) {
+    currentDataset = DATA[datasetKey] ? datasetKey : 'fruits';
+    titleEl.textContent = TITLES[currentDataset] || 'Items';
+    searchEl.value = '';
+    renderList('');
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    overlay.classList.remove('open');
+    sheet.classList.remove('expanded');
+    searchEl.blur();
+  }
+
+  document.querySelectorAll('[data-open-modal]').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn.dataset.openModal); });
+  });
+
+  closeBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeModal();
+  });
+
+  searchEl.addEventListener('input', function () { renderList(searchEl.value); });
+
+  // Expand the sheet up to just under the island the moment the search field
+  // is focused (keyboard opening), collapse it back on blur.
+  searchEl.addEventListener('focus', function () {
+    sheet.classList.add('expanded');
+  });
+  searchEl.addEventListener('blur', function () {
+    sheet.classList.remove('expanded');
+  });
+
+})();
+</script>
+</body>
+</html>
