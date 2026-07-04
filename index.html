@@ -43,18 +43,9 @@
     color: var(--text-0);
   }
 
-  /* Hidden probe used to read the true rendered viewport height (more
-     reliable on iOS than window.innerHeight / visualViewport.height,
-     which can misreport by a few px in standalone mode). */
-  #envProbe {
-    position: fixed;
-    inset: 0;
-    height: 100dvh;
-    width: 1px;
-    visibility: hidden;
-    pointer-events: none;
-    z-index: -1;
-  }
+  /* Real viewport height + safe-area values are resolved by the boot
+     script below (measureEnv / setAppHeight) rather than trusted from
+     raw CSS units — see the script comment for why. */
 
   /* ===== App shell — pinned to the bottom of the device viewport ===== */
   .app {
@@ -379,6 +370,10 @@
     flex: 0 0 auto;
   }
 
+  .modal-list.resizing {
+    pointer-events: none;
+  }
+
   .modal-empty {
     color: var(--text-1);
     font-size: 13.5px;
@@ -388,8 +383,6 @@
 </style>
 </head>
 <body>
-
-  <div id="envProbe" aria-hidden="true"></div>
 
   <div class="app" id="app">
     <div class="pages">
@@ -465,34 +458,87 @@
 (function () {
   'use strict';
 
-  /* ---------- App height ----------
-     Measured from a hidden 100dvh probe element rather than
-     window.innerHeight / visualViewport.height, both of which can
-     misreport by a few px in iOS standalone mode (the cause of the
-     "dead space" at the bottom of the app and modal sheets).
-     Measured once on load / orientation change only — never on every
-     visualViewport resize — so the app shell never jumps around when
-     the keyboard opens elsewhere (e.g. inside the modal). */
-  var envProbe = document.getElementById('envProbe');
-
-  function measureAppHeight() {
-    var h = envProbe.getBoundingClientRect().height;
-    if (h > 0) {
-      document.documentElement.style.setProperty('--app-height', h + 'px');
-    }
+  /* ---------- Real viewport height + safe-area fix ----------
+     iOS standalone has two related quirks:
+     1. window.visualViewport.height under-reports — it doesn't include
+        the top safe-area inset — so deriving --app-height from it alone
+        leaves the app shell (and anything sized as a % of it, like the
+        modal sheet) short of the true screen height. That shortfall is
+        the "dead space" at the bottom.
+     2. env(safe-area-inset-*) read straight through a CSS custom
+        property has its own known staleness bug — the bridge can return
+        a wrong value, not just zero.
+     Fix for both: resolve env() through a throwaway DOM probe (never
+     through a CSS var) and use that resolved px value to (a) top up the
+     measured viewport height, and (b) overwrite --safe-top/--safe-bottom
+     directly, rather than trusting the live env() bridge. */
+  function measureEnv(prop) {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(' + prop + ', 0px);visibility:hidden;pointer-events:none;';
+    document.documentElement.appendChild(el);
+    var val = el.offsetHeight;
+    document.documentElement.removeChild(el);
+    return val;
   }
 
-  measureAppHeight();
-  // Re-measure a couple of times shortly after load: iOS standalone can
-  // settle its chrome/safe-area a moment after the load event fires.
-  window.addEventListener('load', function () {
-    measureAppHeight();
-    requestAnimationFrame(measureAppHeight);
-    setTimeout(measureAppHeight, 250);
+  /* ---------- Keyboard detection ----------
+     window.innerHeight shrinks WITH the keyboard on iOS standalone, so
+     innerHeight - visualViewport.height ends up ≈ 0 — useless as a
+     signal. window.screen.height is the physical screen height and
+     never changes, so comparing visualViewport.height against a
+     fraction of it reliably tells keyboard-open apart from any other
+     legitimate resize. Gated on navigator.standalone so this only ever
+     activates in the installed home-screen app, never in a normal tab.  */
+  function isKeyboardOpen() {
+    if (!window.visualViewport || !window.navigator.standalone) return false;
+    var vvh = window.visualViewport.height;
+    var screenH = (window.screen && window.screen.height) || (vvh * 2);
+    return vvh < screenH * 0.75;
+  }
+
+  /* ---------- App height ----------
+     Do NOT update --app-height while the keyboard is open — otherwise
+     the shell itself would shrink instead of staying put underneath the
+     modal, which is the whole point of keeping it locked. */
+  function setAppHeight() {
+    if (isKeyboardOpen()) return;
+    var measured = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    var h = measured + measureEnv('safe-area-inset-top');
+    if (window.screen && window.screen.height) {
+      h = Math.min(h, window.screen.height);
+    }
+    document.documentElement.style.setProperty('--app-height', h + 'px');
+  }
+
+  function setSafeAreaVars() {
+    document.documentElement.style.setProperty('--safe-top', measureEnv('safe-area-inset-top') + 'px');
+    document.documentElement.style.setProperty('--safe-bottom', measureEnv('safe-area-inset-bottom') + 'px');
+  }
+
+  function measureAll() {
+    setAppHeight();
+    setSafeAreaVars();
+  }
+
+  // Boot sequence: iOS standalone can settle its chrome/safe-area a
+  // moment after load, so keep re-measuring for the first few seconds
+  // rather than trusting a single reading.
+  measureAll();
+  document.addEventListener('DOMContentLoaded', function () {
+    var n = 0;
+    var iv = setInterval(function () {
+      measureAll();
+      if (++n > 10) clearInterval(iv);
+    }, 500);
   });
-  window.addEventListener('pageshow', measureAppHeight);
+  requestAnimationFrame(function () { requestAnimationFrame(measureAll); });
+  setTimeout(measureAll, 100);
+  setTimeout(measureAll, 400);
+  window.addEventListener('load', measureAll);
+  window.addEventListener('pageshow', measureAll);
+  window.addEventListener('resize', measureAll);
   window.addEventListener('orientationchange', function () {
-    setTimeout(measureAppHeight, 300);
+    setTimeout(measureAll, 300);
   });
 
   /* ---------- Nav bar: sliding highlight ---------- */
@@ -607,14 +653,41 @@
 
   searchEl.addEventListener('input', function () { renderList(searchEl.value); });
 
-  // Expand the sheet up to just under the island the moment the search field
-  // is focused (keyboard opening), collapse it back on blur.
+  // Expand the sheet up to just under the island the moment the search
+  // field is focused (keyboard opening), collapse it back on blur.
+  //
+  // iOS keeps a stale internal sense of a resizing element's scroll/hit
+  // region until a *real* scroll forces it to recompute — otherwise the
+  // very first touch after the resize can be interpreted against the
+  // pre-resize layout (e.g. grabbing the sheet/header instead of the
+  // list, because that's roughly where the header sat before it moved).
+  // Fix: block touches on the list for the duration of the transition,
+  // then once it's finished, nudge scrollTop by 1px and back — a real
+  // scroll delta, which forces iOS to recompute against the new layout
+  // before the user's next touch arrives.
+  function settleListScroll() {
+    listEl.classList.remove('resizing');
+    var st = listEl.scrollTop;
+    listEl.scrollTop = st + 1;
+    listEl.scrollTop = st;
+  }
+
   searchEl.addEventListener('focus', function () {
+    listEl.classList.add('resizing');
     sheet.classList.add('expanded');
   });
   searchEl.addEventListener('blur', function () {
+    listEl.classList.add('resizing');
     sheet.classList.remove('expanded');
   });
+  sheet.addEventListener('transitionend', function (e) {
+    if (e.target === sheet && (e.propertyName === 'height' || e.propertyName === 'max-height')) {
+      settleListScroll();
+    }
+  });
+  // Fallback in case transitionend doesn't fire (e.g. interrupted transition)
+  searchEl.addEventListener('focus', function () { setTimeout(settleListScroll, 420); });
+  searchEl.addEventListener('blur', function () { setTimeout(settleListScroll, 420); });
 
 })();
 </script>
