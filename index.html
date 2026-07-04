@@ -13,6 +13,7 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --app-height: 100dvh;
+    --nav-h: 76px;
 
     --bg-0: #0b0f14;
     --bg-1: #10161d;
@@ -54,8 +55,6 @@
     right: 0;
     bottom: 0;
     height: var(--app-height);
-    display: flex;
-    flex-direction: column;
     background:
       radial-gradient(120% 60% at 50% 0%, rgba(22,194,163,0.10), transparent 60%),
       linear-gradient(180deg, var(--bg-1), var(--bg-0));
@@ -63,16 +62,15 @@
   }
 
   .pages {
-    position: relative;
-    flex: 1 1 auto;
-    min-height: 0;
+    position: absolute;
+    inset: 0;
     overflow: hidden;
   }
 
   .page {
     position: absolute;
     inset: 0;
-    padding: calc(28px + var(--safe-top)) 20px 24px;
+    padding: calc(28px + var(--safe-top)) 20px calc(var(--nav-h) + var(--safe-bottom) + 20px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
@@ -175,18 +173,24 @@
   }
   .filler-card b { color: var(--text-0); display:block; margin-bottom:2px; font-size: 14px;}
 
-  /* ===== Floating animated nav bar ===== */
-  .navbar-wrap {
-    flex: 0 0 auto;
-    padding: 10px 16px calc(12px + var(--safe-bottom));
-    display: flex;
-    justify-content: center;
-  }
-
+  /* ===== Floating animated nav bar =====
+     Anchored to .app (position: relative parent) rather than the
+     viewport, and positioned with an explicit bottom offset rather than
+     living inside the flex layout. Keeping it out of the flex flow
+     avoids double-counting --safe-bottom: previously the nav consumed
+     real flex height (via its own padding) *and* the page content used
+     a flat 24px bottom padding that didn't know about the nav's height
+     at all — the mismatch between those two independent numbers is
+     what left extra dead space at the bottom. Now there's a single
+     source of truth (--nav-h + --safe-bottom) that both the page
+     padding and the nav's own position reference. */
   .navbar {
-    position: relative;
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--safe-bottom) - 6px);
+    transform: translateX(-50%);
     display: flex;
-    width: 100%;
+    width: calc(100% - 32px);
     max-width: 420px;
     background: rgba(24, 32, 41, 0.78);
     backdrop-filter: blur(20px) saturate(160%);
@@ -424,19 +428,17 @@
 
     </div>
 
-    <div class="navbar-wrap">
-      <nav class="navbar" id="navbar">
-        <div class="nav-highlight" id="navHighlight"></div>
-        <button class="nav-btn active" data-page="page-home">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
-          Home
-        </button>
-        <button class="nav-btn" data-page="page-library">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/></svg>
-          Library
-        </button>
-      </nav>
-    </div>
+    <nav class="navbar" id="navbar">
+      <div class="nav-highlight" id="navHighlight"></div>
+      <button class="nav-btn active" data-page="page-home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
+        Home
+      </button>
+      <button class="nav-btn" data-page="page-library">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/></svg>
+        Library
+      </button>
+    </nav>
   </div>
 
   <div class="modal-overlay" id="modalOverlay">
